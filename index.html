@@ -555,7 +555,7 @@ a{color:var(--ac)}a:hover{color:var(--acd)}
         <input id="minAlt" type="hidden" value="0">
         <button class="btn" id="btnLive">Jetzt laden</button>
         <button class="btn ghost" id="btnTest" title="Prüft jede Datenquelle einzeln">Verbindungstest</button>
-        <label class="ck"><input type="checkbox" id="autoRef" checked> alle 30 s aktualisieren</label>
+        <label class="ck"><input type="checkbox" id="autoRef" checked> laufend aktualisieren (Positionen bewegen sich jede Sekunde)</label>
         <input type="checkbox" id="autoMove" checked hidden>
       </div>
       <div class="hint" id="testOut" hidden style="margin-bottom:.5rem"></div>
@@ -592,12 +592,11 @@ a{color:var(--ac)}a:hover{color:var(--acd)}
           <div class="frm">
             <div class="fl"><label for="mLat">Breite (°)</label><input class="inp" id="mLat" type="number" step="0.001" value="40.240"></div>
             <div class="fl"><label for="mLon">Länge (°)</label><input class="inp" id="mLon" type="number" step="0.001" value="-12.734"></div>
-            <div class="fl"><label for="mBaro">Baro (QNE, ft)</label><input class="inp" id="mBaro" type="number" step="25" value="43000"></div>
             <div class="fl"><label for="mGeo">WGS84-Höhe (ft)</label><input class="inp" id="mGeo" type="number" step="25" value="43425"></div>
             <div class="fl"><label for="mTime">Zeit (UTC)</label><input class="inp" id="mTime" type="datetime-local"></div>
             <div class="fl"><label for="mN">Geoid N (m)</label><input class="inp" id="mN" type="number" step="0.1" value="52"></div>
           </div>
-          <div class="row"><button class="btn" id="btnMan">Übernehmen und rechnen</button><span class="hint">Voreinstellung: dein Screenshot-Beispiel. N = 52 m ist meine Schätzung, kein nachgeschlagener Wert.</span></div>
+          <div class="row"><button class="btn" id="btnMan">Übernehmen und rechnen</button><span class="hint">Die Druckhöhe (baro) musst du nicht eingeben, sie wird aus WGS84-Höhe und Wetter berechnet. N = 52 m ist meine Schätzung, kein nachgeschlagener Wert.</span></div>
         </div>
         <div id="fltBox" hidden>
           <div class="row"><input class="si" id="fq" type="search" placeholder="Flug suchen: Rufzeichen, Hex, Typ …" aria-label="Flüge durchsuchen"><span class="hint" id="fcnt"></span></div>
@@ -1693,15 +1692,15 @@ function renderFlights() {
   const q = $('#fq').value.trim().toLowerCase();
   let L = S.flights.filter(f => !q || (f.call + ' ' + f.hex + ' ' + (f.type || '') + ' ' + (f.reg || '')).toLowerCase().includes(q));
   const k = S.sortKey, d = S.sortDir;
-  const val = f => k === 'call' ? flightLabel(f) : k === 'diff' ? (f.geo - f.baro) : k === 'pred' ? ((S.results.get(f.id) || {}).predFt) : f[k];
+  const val = f => k === 'call' ? flightLabel(f) : k === 'bp' ? ((S.results.get(f.id) || {}).baroPred) : k === 'sero' ? (((S.results.get(f.id) || {}).ref || {}).gm) : k === 'pred' ? ((S.results.get(f.id) || {}).predFt) : f[k];
   L.sort((a, b) => { const x = val(a), y = val(b); if (typeof x === 'string') return d * String(x).localeCompare(String(y)); return d * ((isFinite(x) ? x : -1e15) - (isFinite(y) ? y : -1e15)); });
   $('#fcnt').textContent = `${L.length} von ${S.flights.length} Flügen`;
   const th = (key, t) => `<th data-k="${key}">${t}${S.sortKey === key ? (S.sortDir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
   const rows = L.slice(0, 400).map(f => {
-    const r = S.results.get(f.id), df = f.geo - f.baro;
-    return `<tr class="fl${f.id === S.sel ? ' sel' : ''}" data-id="${f.id}"><td>${esc(flightLabel(f))}</td><td class="mono">${isFinite(f.t) ? new Date(f.t).toISOString().slice(5, 16).replace('T', ' ') : '–'}</td><td class="mono">${nf(f.baro, 0)}</td><td class="mono">${nf(f.geo, 0)}</td><td class="mono">${nf(df, 0)}</td><td class="mono">${r && isFinite(r.predFt) ? nf(r.predFt, 0) : '–'}</td></tr>`;
+    const r = S.results.get(f.id);
+    return `<tr class="fl${f.id === S.sel ? ' sel' : ''}" data-id="${f.id}"><td>${esc(flightLabel(f))}</td><td class="mono">${isFinite(f.t) ? new Date(f.t).toISOString().slice(5, 16).replace('T', ' ') : '–'}</td><td class="mono">${nf(f.geo, 0)}</td><td class="mono">${r && isFinite(r.baroPred) ? nf(r.baroPred, 0) : '–'}</td><td class="mono">${r && isFinite(r.predFt) ? nf(r.predFt, 0) : '–'}</td><td class="mono">${r && r.ref ? nf(r.ref.gm, 0) : '–'}</td></tr>`;
   }).join('');
-  $('#fltTbl').innerHTML = `<thead><tr>${th('call', 'Flug')}${th('t', 'Zeit')}${th('baro', 'Baro ft')}${th('geo', 'Geo ft')}${th('diff', 'geo−baro')}${th('pred', 'berechnet')}</tr></thead><tbody>${rows || '<tr><td colspan="6" style="text-align:left;color:var(--mu)">Keine Treffer</td></tr>'}</tbody>`;
+  $('#fltTbl').innerHTML = `<thead><tr>${th('call', 'Flug')}${th('t', 'Zeit')}${th('geo', 'Geo ft')}${th('bp', 'Baro berechnet')}${th('pred', 'geo−baro berechnet')}${th('sero', 'geo−baro Messdaten')}</tr></thead><tbody>${rows || '<tr><td colspan="7" style="text-align:left;color:var(--mu)">Keine Treffer</td></tr>'}</tbody>`;
   $$('#fltTbl th').forEach(h => h.addEventListener('click', () => { if (S.sortKey === h.dataset.k) S.sortDir *= -1; else { S.sortKey = h.dataset.k; S.sortDir = -1; } renderFlights(); }));
   $$('#fltTbl tr.fl').forEach(tr => tr.addEventListener('click', () => selectFlight(+tr.dataset.id)));
 }
@@ -1737,7 +1736,7 @@ function rowsToFlights(rows, unit) { // rows: Array<{key:value}> mit normalisier
     const meters = x => unit === 'm' || (unit === 'auto' && /(_m|altitude)$/.test(x.n) && !/_ft$/.test(x.n) && !/^alt_/.test(x.n));
     const bv = num(b.v), gv = num(ge.v); if (!isFinite(bv) || !isFinite(gv) || String(b.v).toLowerCase() === 'ground') { skipped++; return; }
     const t = g('t'), h = g('hex'), c = g('call'), n = g('N'), tk = g('trk');
-    out.push({ lat: num(lat.v), lon: num(lon.v), baro: meters(b) ? bv / FT : bv, geo: meters(ge) ? gv / FT : gv, t: t ? parseTime(t.v) : NaN, hex: h ? String(h.v).trim() : '', call: c ? String(c.v).trim() : '', N: n ? num(n.v) : NaN, trk: tk ? num(tk.v) : 0, gs: g('gs') ? num(g('gs').v) : NaN, type: g('type') ? String(g('type').v) : '', reg: g('reg') ? String(g('reg').v) : '' });
+    out.push({ chk: true, lat: num(lat.v), lon: num(lon.v), baro: meters(b) ? bv / FT : bv, geo: meters(ge) ? gv / FT : gv, t: t ? parseTime(t.v) : NaN, hex: h ? String(h.v).trim() : '', call: c ? String(c.v).trim() : '', N: n ? num(n.v) : NaN, trk: tk ? num(tk.v) : 0, gs: g('gs') ? num(g('gs').v) : NaN, type: g('type') ? String(g('type').v) : '', reg: g('reg') ? String(g('reg').v) : '' });
   });
   return { flights: out.filter(f => isFinite(f.lat) && isFinite(f.lon)), skipped };
 }
@@ -1781,10 +1780,17 @@ let MAP = null, autoT = 0, liveBusy = false, moveT = 0;
 S.live = []; S.trail = new Map(); S.selKey = null;
 const altCol = ft => { const t = Math.max(0, Math.min(1, (ft - 5000) / 40000)); const h = 220 - t * 190; return `hsl(${h},90%,${44 - t * 4}%)`; };
 const keyOf = f => f.hex ? String(f.hex).toLowerCase() : 'f' + f.id;
+function drp(f, now) { // Position fortschreiben (Kurs und Geschwindigkeit), damit sich die Flugzeuge jede Sekunde bewegen
+  const age = (now - f.t) / 1000;
+  if (!isFinite(age) || age < 0 || age > 120 || !isFinite(f.gs) || f.gs < 30 || f.trk == null) return [f.lat, f.lon];
+  const d = f.gs * 0.514444 * age, tr = f.trk * Math.PI / 180;
+  return [f.lat + d * Math.cos(tr) / 111320, f.lon + d * Math.sin(tr) / (111320 * Math.max(.05, Math.cos(f.lat * Math.PI / 180)))];
+}
 function mapPoints() {
   if (!MAP) return;
   const seen = new Set(), pts = [];
-  S.live.forEach(f => { seen.add(keyOf(f)); pts.push({ id: keyOf(f), lat: f.lat, lon: f.lon, trk: f.trk || 0, baro: f.baro }); });
+  const now = Date.now();
+  S.live.forEach(f => { seen.add(keyOf(f)); const p = drp(f, now); pts.push({ id: keyOf(f), lat: p[0], lon: p[1], trk: f.trk || 0, baro: isFinite(f.baro) ? f.baro : f.geo }); });
   S.flights.forEach(f => { if (!seen.has(keyOf(f)) && f.id === S.sel && f.hex) pts.push({ id: keyOf(f), lat: f.lat, lon: f.lon, trk: f.trk || 0, baro: f.baro }); });
   MAP.setPoints(pts); MAP.select(S.selKey);
   const tr = S.selKey ? S.trail.get(S.selKey) : null;
@@ -1803,7 +1809,7 @@ function infoPanel() {
   const tr = S.trail.get(keyOf(f)) || [], r = S.results.get(f.id);
   const row = (k, v) => `<div class="ir"><i>${k}</i><span class="mono">${v}</span></div>`;
   el.innerHTML = `<h4>${esc(flightLabel(f))}</h4><div class="hint">${esc((f.hex || '').toUpperCase())}${f.reg ? ' · ' + esc(f.reg) : ''}${f.type ? ' · ' + esc(f.type) : ''}</div>
-    <div class="ig">${row('Druckhöhe', isFinite(f.baro) ? nf(f.baro, 0) + ' ft' : 'nicht gesendet')}${row('WGS84-Höhe', isFinite(f.geo) ? nf(f.geo, 0) + ' ft' : 'nicht gesendet')}${row('geo − baro (ADS-B)', isFinite(f.geo - f.baro) ? sg(f.geo - f.baro, 0) + ' ft' : 'aus Rechnung')}${row('Geschw.', isFinite(f.gs) ? nf(f.gs, 0) + ' kn' : '–')}${row('Kurs', f.trk != null ? nf(f.trk, 0) + '°' : '–')}${row('Position', nf(f.lat, 3) + ', ' + nf(f.lon, 3))}${row('Stand', isFinite(f.t) ? utc(f.t).slice(11) : '–')}${row('Spurpunkte', String(tr.length))}${r ? row('berechnet', sg(r.predFt, 0) + ' ft') : ''}</div>`;
+    <div class="ig">${row('WGS84-Höhe', isFinite(f.geo) ? nf(f.geo, 0) + ' ft' : 'nicht gesendet')}${row('Geschw.', isFinite(f.gs) ? nf(f.gs, 0) + ' kn' : '–')}${row('Kurs', f.trk != null ? nf(f.trk, 0) + '°' : '–')}${row('Position', nf(f.lat, 3) + ', ' + nf(f.lon, 3))}${row('Stand', isFinite(f.t) ? utc(f.t).slice(11) : '–')}${row('Spurpunkte', String(tr.length))}${r ? row('Baro berechnet', nf(r.baroPred, 0) + ' ft') + row('geo − baro berechnet', sg(r.predFt, 0) + ' ft') + (r.ref ? row('geo − baro Messdaten', sg(r.ref.gm, 0) + ' ft') : '') : ''}</div>`;
 }
 async function pickKey(k, fromMap) {
   const lf = S.live.find(x => keyOf(x) === k);
@@ -1834,8 +1840,10 @@ function initMap() {
   $('#liveQ').addEventListener('input', renderLive);
   $('#liveList').addEventListener('click', e => { const b = e.target.closest('.lf'); if (b) pickKey(b.dataset.k, false); });
   $('#btnAddAll').addEventListener('click', () => { S.live.forEach(f => { if (!S.flights.some(x => keyOf(x) === keyOf(f))) S.flights.push(Object.assign({}, f, { id: S.nid++ })); }); $('#fltBox').hidden = !S.flights.length; renderFlights(); mapPoints(); msg($('#fltMsg'), 'ok', `${S.live.length} sichtbare Flugzeuge in die Flugliste übernommen. Unten „Alle berechnen“ startet die Auswertung.`); });
-  const setAuto = () => { clearInterval(autoT); if ($('#autoRef').checked) autoT = setInterval(() => { if (!document.hidden && !$('#vrechner').classList.contains('hide')) loadLive(true); }, 20000); };
-  $('#autoRef').addEventListener('change', setAuto); setAuto();
+  let looping = false;
+  const setAuto = async () => { if (looping) return; looping = true; try { while ($('#autoRef').checked) { if (!document.hidden && !$('#vrechner').classList.contains('hide') && MAP) await loadLive(true); await sleep(1200); } } finally { looping = false; } };
+  $('#autoRef').addEventListener('change', setAuto); setTimeout(setAuto, 1500);
+  setInterval(() => { if (!document.hidden && !$('#vrechner').classList.contains('hide') && S.live.length) mapPoints(); }, 1000);
   infoPanel(); renderLive();
 }
 function scheduleLoad(ms) { clearTimeout(moveT); moveT = setTimeout(() => { if (!$('#vrechner').classList.contains('hide')) loadLive(true); }, ms); }
@@ -1878,6 +1886,7 @@ async function getJson(k, url) {
   try { const r = await fetch(S.helper ? '/p?u=' + encodeURIComponent(url) : url, { signal: ctl.signal }); const txt = await r.text(); if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 429 ? ' (Ratenlimit)' : '') + ' ' + txt.slice(0, 80)); const js = JSON.parse(txt); if (!(js.states || js.ac || js.aircraft)) throw new Error(txt.slice(0, 100)); return js; }
   finally { clearTimeout(to); }
 }
+function seedLive() { const m = new Map(), n = Date.now(); S.live.forEach(f => { if (n - f.t < 90000) m.set(f.hex.toLowerCase(), f); }); return m; }
 async function loadFeed() {
   if (!/^https?:/.test(location.protocol) || S.feedOk === false) return false;
   try {
@@ -1892,7 +1901,7 @@ async function loadFeed() {
 }
 const WTYPES = ['A320','B738','A321','A20N','A21N','A319','B737','B38M','B739','B772','B77W','B788','B789','A333','A332','A359','B763','E190','E75L','CRJ9','AT76','DH8D','A388','B744','B748','A35K','A306','B752','E170','E195','BCS3','BCS1','CRJ7','E145','C172','PC12','SR22','GLF6','C25A','B350','H25B','C208','PA28','DA40'];
 async function loadTypes() {
-  const all = new Map(); let ok = 0, last = '';
+  const all = seedLive(); let ok = 0, last = '';
   for (let i = 0; i < WTYPES.length; i++) {
     $('#liveInfo').textContent = `lade weltweit nach Flugzeugtyp ${i + 1} von ${WTYPES.length} … (${all.size} Flugzeuge)`;
     try { const js = await getJson('airplanes', 'https://api.airplanes.live/v2/type/' + WTYPES[i]); ok++; liveParse(js).list.forEach(f => all.set(f.hex.toLowerCase(), f)); S.live = Array.from(all.values()).map(f => Object.assign(f, { id: 0 })); if (i % 3 === 2 || i === WTYPES.length - 1) { mapPoints(); renderLive(); } } catch (e) { last = e.message; if (!ok && i >= 1) throw new Error('airplanes.live: ' + (last === 'Failed to fetch' ? 'blockiert oder nicht erreichbar' : last)); }
@@ -1919,7 +1928,7 @@ async function loadLive(silent) {
     try { await loadTypes(); msg($('#fltMsg'), '', ''); liveBusy = false; $('#btnLive').disabled = false; return; } catch (e) { S.skyErr += ' | ' + e.message; }
     if (await loadFeed()) { liveBusy = false; $('#btnLive').disabled = false; return; }
   }
-  const cs = circles(), errs = world && S.skyErr ? ['OpenSky: ' + S.skyErr] : [], all = new Map(); let ground = 0, name = '', done = 0;
+  const cs = circles(), errs = world && S.skyErr ? ['OpenSky: ' + S.skyErr] : [], all = seedLive(); let ground = 0, name = '', done = 0;
   const order = LIVE_API ? [LIVE_API] : S.helper ? ['airplanes', 'adsblol', 'adsbone', 'adsbfi'] : ['airplanes', 'adsblol', 'adsbone', 'adsbfi'];
   try {
     for (const [la, lo] of cs.pts) {
@@ -1958,8 +1967,8 @@ function subTab(p) {
 $$('#subTabs .chip').forEach(b => b.addEventListener('click', () => subTab(b.dataset.p)));
 $('#btnMan').addEventListener('click', () => {
   const t = $('#mTime').value ? Date.parse($('#mTime').value + ':00Z') : NaN;
-  const f = { lat: num($('#mLat').value), lon: num($('#mLon').value), baro: num($('#mBaro').value), geo: num($('#mGeo').value), t: t, hex: '', call: 'Manuell', N: num($('#mN').value) };
-  if (![f.lat, f.lon, f.baro].every(isFinite)) return msg($('#fltMsg'), 'err', 'Breite, Länge und Baro-Höhe sind nötig.');
+  const f = { lat: num($('#mLat').value), lon: num($('#mLon').value), baro: NaN, geo: num($('#mGeo').value), t: t, hex: '', call: 'Manuell', N: num($('#mN').value) };
+  if (![f.lat, f.lon, f.geo].every(isFinite)) return msg($('#fltMsg'), 'err', 'Breite, Länge und WGS84-Höhe sind nötig.');
   msg($('#fltMsg'), '', ''); addFlights([f]); selectFlight(f.id);
 });
 
@@ -2052,15 +2061,23 @@ async function calibN(f) {
   NCAL.set(key, res); return res;
 }
 async function runOne(f) {
-  if (!isFinite(f.baro)) throw new Error('Dieses Flugzeug sendet keine Druckhöhe. Ohne sie ist keine Berechnung möglich.');
+  const hasGeo = isFinite(f.geo), hasBaro = isFinite(f.baro);
+  if (!hasGeo && !hasBaro) throw new Error('Dieses Flugzeug sendet keine Höhe. Ohne WGS84-Höhe ist keine Vorhersage möglich.');
   let n = getN(f); if (!n) n = await calibN(f);
   const w = await getProfile(f);
-  const ref = window.GBMess && isFinite(f.t) ? window.GBMess.lookup(f) : null;
-  const geo = isFinite(f.geo) ? f.geo : (ref ? f.baro + ref.gm : undefined);
-  const r = G.compute({ baroFt: f.baro, geoFt: geo, lat: f.lat, N: n.N, prof: w.prof });
-  r.nSrc = n.src; r.wMeta = w.meta; r.prof = w.prof; r.f = f; r.ref = ref; r.geoSrc = isFinite(f.geo) ? 'ADS-B des Flugs' : (ref ? 'gespeicherte SeRo-Messdaten' : null);
+  let r;
+  if (hasGeo) { // Vorhersage: aus der WGS84-Höhe wird die Druckhöhe berechnet (Fixpunktiteration baro = geo − (geo−baro)_berechnet)
+    let b = f.geo, it = 0;
+    for (; it < 25; it++) { const t = G.compute({ baroFt: b, lat: f.lat, N: n.N, prof: w.prof }); const nb = f.geo - t.predFt; const done = Math.abs(nb - b) < 0.01; b = nb; if (done) break; }
+    r = G.compute({ baroFt: b, lat: f.lat, N: n.N, prof: w.prof }); r.mode = 'inv'; r.baroPred = b; r.invIter = it + 1;
+    if (f.chk && hasBaro) { r.measFt = f.geo - f.baro; r.errFt = r.predFt - r.measFt; r.errIsaFt = r.isaFt - r.measFt; r.measWxFt = r.measFt - r.cGeoid - r.cScale; }
+  } else { // nur Druckhöhe gesendet: Vorwärtsrechnung
+    r = G.compute({ baroFt: f.baro, lat: f.lat, N: n.N, prof: w.prof }); r.mode = 'fwd'; r.baroPred = f.baro;
+  }
+  const ref = window.GBMess ? window.GBMess.nearest(f.lat, f.lon, hasGeo ? f.geo : f.baro + r.predFt) : null;
+  r.nSrc = n.src; r.wMeta = w.meta; r.prof = w.prof; r.f = f; r.ref = ref; r.geoSrc = null;
   r.refErr = ref ? r.predFt - ref.gm : NaN;
-  if (window.GBArchive && $('#autoSave').checked && isFinite(f.t)) window.GBArchive.addResults([{ run: 'Rechner', tms: f.t, lat: f.lat, lon: f.lon, baro: f.baro, ic: f.hex || '', meas: isFinite(r.measFt) ? r.measFt : null, pred: r.predFt, isa: r.isaFt, wx: r.cWx, N: n.N, src: srcLabel(), ref: r.geoSrc || '' }]);
+  if (window.GBArchive && $('#autoSave').checked && isFinite(f.t)) window.GBArchive.addResults([{ run: 'Rechner', tms: f.t, lat: f.lat, lon: f.lon, baro: r.baroPred, ic: f.hex || '', meas: isFinite(r.measFt) ? r.measFt : null, pred: r.predFt, isa: r.isaFt, wx: r.cWx, N: n.N, src: srcLabel(), ref: ref ? 'SeRo nächste Position' : '' }]);
   return r;
 }
 
@@ -2100,10 +2117,13 @@ function renderResult(r) {
   if ($('#wxSrc').value === 'demo') warn.push('<b>Demo-Wetter:</b> synthetisches ISA-Profil mit ΔT, auf dein Screenshot-Beispiel abgestimmt. Der Treffer beweist nur, dass die Rechenkette stimmt, nicht dass die Vorhersage gut ist.');
   $('#resEmpty').hidden = true; const B = $('#resBody'); B.hidden = false;
   B.innerHTML = `
-    <p class="hint" style="margin-bottom:.8rem"><b>${esc(flightLabel(f))}</b> · ${utc(f.t)} · ${nf(f.lat, 3)}°, ${nf(f.lon, 3)}° · Baro ${nf(f.baro, 0)} ft${isFinite(f.geo) ? ' · WGS84 ' + nf(f.geo, 0) + ' ft' : ''}</p>
+    <p class="hint" style="margin-bottom:.8rem"><b>${esc(flightLabel(f))}</b> · ${utc(f.t)} · ${nf(f.lat, 3)}°, ${nf(f.lon, 3)}° ${isFinite(f.geo) ? ' · WGS84-Höhe ' + nf(f.geo, 0) + ' ft' : ''}${r.mode === 'fwd' ? ' · gesendete Druckhöhe ' + nf(f.baro, 0) + ' ft (keine WGS84-Höhe empfangen)' : ''}</p>
     <div class="res-top">
       ${tile('geo − baro berechnet', nf(r.predFt, 0), 'ft', true)}
-      ${has ? tile('geo − baro gemessen' + (r.geoSrc ? ' (' + (r.ref && !isFinite(f.geo) ? 'SeRo' : 'ADS-B') + ')' : ''), nf(r.measFt, 0), 'ft') : ''}
+      ${tile('Druckhöhe (baro) berechnet', nf(r.baroPred, 0), 'ft')}
+      ${r.ref ? tile('geo − baro Messdaten (nächste Position)', nf(r.ref.gm, 0), 'ft') : ''}
+      ${r.ref ? tile('Abweichung zu den Messdaten', sg(r.refErr, 0), 'ft') : ''}
+      ${has ? tile('geo − baro gemessen (Datei)', nf(r.measFt, 0), 'ft') : ''}
       ${has ? tile('Abweichung (Vorhersage − Messung)', sg(r.errFt, 0), 'ft') : ''}
       ${has ? tile('Abweichung nur ISA + Geoid', sg(r.errIsaFt, 0), 'ft') : ''}
     </div>
@@ -2115,7 +2135,7 @@ function renderResult(r) {
     <p class="hint">Wetteranteil: Vorhersage ${sg(r.cWx, 0)} ft, aus ADS-B abgeleitet ${sg(r.measWxFt, 0)} ft.</p>` : ''}
     ${warn.map(w => `<div class="msg warn">${w}</div>`).join('')}
     <div class="stp">
-      ${st('1', 'Druckhöhe in Metern', `${nf(f.baro, 0)} ft × 0,3048`, nf(r.Zqne, 1) + ' m')}
+      ${r.mode === 'inv' ? st('1', 'Druckhöhe aus der WGS84-Höhe iteriert', `WGS84 ${nf(f.geo, 0)} ft; baro = geo − (geo−baro)<sub>berechnet</sub>, ${r.invIter} Schritte, Ergebnis ${nf(r.baroPred, 0)} ft × 0,3048`, nf(r.Zqne, 1) + ' m') : st('1', 'Druckhöhe in Metern', `${nf(f.baro, 0)} ft × 0,3048`, nf(r.Zqne, 1) + ' m')}
       ${st('2', 'Druck aus QNE-Höhe', 'Gl. 12/14 umgekehrt (ISA)', nf(r.p / 100, 2) + ' hPa')}
       ${st('3', 'Wetterprofil', esc(r.wMeta) + `, ${r.prof.length} gültige Flächen`, '')}
       ${st('4', `Wetterkorrigierte Druckhöhe, ${r.iter.length} Iterationen`, `Gl. 15 nach Z<sub>ref</sub>; Kontrolle: Isobarenhöhe direkt ${nf(r.ZdirMsl, 1)} m`, nf(r.ZpwMsl, 1) + ' m')}
@@ -2144,11 +2164,11 @@ function wxTables(r) {
     <div class="tw"><table class="wxtbl"><thead><tr><th>p (hPa)</th><th>Z (gpm)</th><th>T (°C)</th><th>T − ISA (K)</th></tr></thead><tbody>${lv}</tbody></table></div></details>`;
 }
 function refBlock(r) {
-  const f = r.f; if (!window.GBMess || !isFinite(f.t)) return '';
-  if (!r.ref) return window.GBMess.hasDay(f.t) ? '<div class="msg" style="margin-top:0;margin-bottom:.8rem"><b>Gespeicherte Messdaten (SeRo):</b> Für diesen Tag vorhanden, aber kein Flugzeug in der Nähe von Zeit, Ort und Höhe dieses Punkts (Suchfenster ±15 s, 3 km, 200 ft).</div>' : '';
+  if (!window.GBMess || !window.GBMess.M.days.length) return '<div class="msg" style="margin-top:0;margin-bottom:.8rem"><b>Messdaten (SeRo):</b> in dieser Version nicht geladen, daher kein Vergleich. Der Vergleich läuft in der lokalen Datei mit den eingebauten Messdaten.</div>';
+  if (!r.ref) return '<div class="msg" style="margin-top:0;margin-bottom:.8rem"><b>Messdaten (SeRo):</b> keine Messung im Umkreis von 80 km und ±2000 ft dieser Position.</div>';
   const x = r.ref;
-  return `<div class="msg ok" style="margin-top:0;margin-bottom:.8rem"><b>Gespeicherte Messdaten (SeRo) gefunden:</b> ICAO24 <span class="mono">${esc(x.icHex)}</span>, ${nf(x.dt, 0)} s Zeitversatz, ${nf(x.distKm, 1)} km Abstand, ${nf(x.dz, 0)} ft Höhenunterschied.<br>
-  Gemessen geo − baro: <b>${nf(x.gm, 0)} ft</b> · berechnet: <b>${nf(r.predFt, 0)} ft</b> · Abweichung: <b>${sg(r.refErr, 0)} ft</b>${isFinite(f.geo) ? ` · ADS-B des Flugs: ${nf(f.geo - f.baro, 0)} ft` : ''}</div>`;
+  return `<div class="msg ok" style="margin-top:0;margin-bottom:.8rem"><b>Nächste Position in den Messdaten:</b> ${nf(x.distKm, 1)} km Abstand, ${nf(x.dz, 0)} ft Höhenunterschied, Messung vom ${esc(utc(x.t))}, ICAO24 <span class="mono">${esc(x.icHex)}</span>${x.n > 1 ? `, ${x.n} Messpunkte im Umkreis 30 km (Median ${nf(x.med, 0)} ft)` : ''}.<br>
+  Gemessen geo − baro: <b>${nf(x.gm, 0)} ft</b> · berechnet: <b>${nf(r.predFt, 0)} ft</b> · Abweichung: <b>${sg(r.refErr, 0)} ft</b></div>`;
 }
 function niceTicks(a, b, n) {
   const span = b - a || 1, raw = span / (n || 5), mag = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / mag;
@@ -2717,7 +2737,26 @@ window.GBArchive.onChange(renderArchive); window.GBArchive.ready.then(renderArch
 
 function refreshAll() { renderDays(); fillDaySelect(); renderSearch(); renderEvDays(); if (M.days.length && !M.mapDay) setMapDay(M.days[0], 0); else frame(); }
 function showDay(date) { $('#sDay').value = date; $('#sDay').dispatchEvent(new Event('input')); }
-window.GBMess = { M, parseFile, buildSegs, loadFiles, selectSeg, showDay, loadEmbedded, filtered, META, lookup, hasDay };
+function nearest(lat, lon, geoFt) {
+  if (!M.days.length || !isFinite(lat) || !isFinite(lon)) return null;
+  const kx = Math.cos(lat * Math.PI / 180) * 111.32; let best = null, bs = 1e18; const near = [];
+  M.days.forEach(d => {
+    if (!d.ok) return;
+    for (let i = 0; i < d.n; i++) {
+      if (!d.ok[i]) continue;
+      const dla = (d.la[i] - lat) * 111.32; if (dla > 80 || dla < -80) continue;
+      const dist = Math.hypot((d.lo[i] - lon) * kx, dla); if (dist > 80) continue;
+      const dz = isFinite(geoFt) ? Math.abs(d.ba[i] + d.gm[i] - geoFt) : 0; if (dz > 2000) continue;
+      const sc = dist + dz / 50;
+      if (sc < bs) { bs = sc; best = { gm: d.gm[i], icHex: hex6(d.ic[i]), distKm: dist, dz, row: i, date: d.date, t: d.t[i] * 1000, dt: NaN }; }
+      if (dist < 30 && dz < 800 && near.length < 5000) near.push(d.gm[i]);
+    }
+  });
+  if (!best) return null;
+  near.sort((a, b) => a - b); best.n = near.length; best.med = near.length ? near[near.length >> 1] : NaN;
+  return best;
+}
+window.GBMess = { nearest, M, parseFile, buildSegs, loadFiles, selectSeg, showDay, loadEmbedded, filtered, META, lookup, hasDay };
 initMap(); renderDays(); renderSearch(); renderEvDays(); refreshWx();
 if (window.GB_EMB) { $('#msProg').textContent = 'Eingebaute Daten werden entpackt …'; loadEmbedded().catch(e => msg($('#msMsg'), 'err', 'Eingebaute Daten: ' + esc(e.message))); }
 })();
